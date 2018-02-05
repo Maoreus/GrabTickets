@@ -1,0 +1,7 @@
+username = 'username@qq.com'
+password = ''
+startDate = '2018-02-24'
+backDate = '2018-02-24'
+fromStation = 'from'
+toStation = 'to'
+sitType = '硬卧'
