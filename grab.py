@@ -4,15 +4,22 @@ import urllib.request
 import re
 import datetime
 import personalInfo
+import threading
+import time
 
 # 全局request请求
 req = requests.Session()
+# 获取订票信息
 startdate = personalInfo.startDate
 backdate = personalInfo.backDate
 city = {}
 fromStation = personalInfo.fromStation
 toStation = personalInfo.toStation
 sitType = personalInfo.sitType
+
+# 是否抢票成功
+isSuccess = False
+
 
 def catchPicture():
     picUrl = 'https://kyfw.12306.cn/passport/captcha/captcha-image?login_site=E&module=' \
@@ -79,8 +86,9 @@ def getStations():
         city[x[i].split(' ')[0]] = x[i].split(' ')[1]
     # print(city)
 
-def checkTickets():
 
+def checkTickets():
+    sit_dict = {'软卧': 23, '软座': 24, '硬卧': 28, '硬座': 29}
     # url = 'https://kyfw.12306.cn/otn/leftTicket/queryZ?leftTicketDTO.train_date=2018-01-31&leftTicketDTO.from_station=BJP&leftTicketDTO.to_station=SHH&purpose_codes=ADULT'
     getStations()
     url = 'https://kyfw.12306.cn/otn/leftTicket/queryZ?' \
@@ -90,10 +98,16 @@ def checkTickets():
           '&purpose_codes=ADULT' % (startdate, city[fromStation], city[toStation])
     response = requests.get(url).json()
     res = response['data']['result']
+    tickets = []
     for x in res:
-        if x.split('|') != ' ':
-            return x.split('|')
+        arr, index = x.split('|'), sit_dict[sitType]
+        if arr[index] == '有' or (arr[index].isdigit() and int(arr[index]) > 0):
+            print("查询到匹配车次 %s" % arr[3])
+            tickets = arr
+    return tickets
+
     # print(res)
+
 
 def orderTicket(ticket):
     login()
@@ -102,7 +116,7 @@ def orderTicket(ticket):
     print('ticket info is')
     print(ticket)
     data = {
-        'secretStr': urllib.request.unquote(ticket[0]), #转义
+        'secretStr': urllib.request.unquote(ticket[0]),  # 转义
         'train_date': startdate,
         'back_train_date': backdate,
         'tour_flag': 'dc',
@@ -121,9 +135,9 @@ def orderTicket(ticket):
     # 获取一个订票token
     res = req.post(url='https://kyfw.12306.cn/otn/confirmPassenger/initDc', data={'_json_att': ''})
     # 把页面的global参数找到
-    token = re.compile("globalRepeatSubmitToken = '(.*?)';").findall(res.text) # 获取到的是数组
-    #获取后面要用到的key_is_change参数
-    key_is_change = re.compile("'key_check_isChange':'(.*?)'").findall(res.text) # 获取到的是数组
+    token = re.compile("globalRepeatSubmitToken = '(.*?)';").findall(res.text)  # 获取到的是数组
+    # 获取后面要用到的key_is_change参数
+    key_is_change = re.compile("'key_check_isChange':'(.*?)'").findall(res.text)  # 获取到的是数组
     if not token:
         print('获取token失败')
         return
@@ -151,7 +165,6 @@ def orderTicket(ticket):
         print('订票失败，获取不到相应的乘客信息：手机， 身份证号和电话')
         return
     print('下单第一步成功')
-    seat_type_dict = {'硬座': '1', '软座': '2', '硬卧': '3', '软卧': '4', '高铁' : 'O'}
     data = {
         'cancel_flag': '2',
         'bed_level_order_num': '000000000000000000000000000000',
@@ -218,19 +231,36 @@ def orderTicket(ticket):
         'REPEAT_SUBMIT_TOKEN': token
     }
     res = req.post(url='https://kyfw.12306.cn/otn/confirmPassenger/confirmSingleForQueue', data=data)
+    isSuccess = True
     print(res.text)
     print('抢票成功！！！！！！！！！！！！！！！欢呼声！！！！！！！！！！！尖叫声！！！！！！！！！！！！')
 
+
 # for test
 
-def getChinaGoodTime(dateStr):#获取中国标准时间
-    weekday = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
-    month_array = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+def getChinaGoodTime(dateStr):  # 获取中国标准时间
+    weekday = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    month_array = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
     year, month, day = tuple(dateStr.split('-'))
     # print(year,month,day)
-    t = datetime.datetime(int(year),int(month),int(day))
-    return weekday[t.weekday()]+' '+month_array[int(month)]+' '+day+' '+year+' 00:00:00 GMT+0800 (中国标准时间)'
+    t = datetime.datetime(int(year), int(month), int(day))
+    return weekday[t.weekday()] + ' ' + month_array[int(month)] + ' ' + day + ' ' + year + ' 00:00:00 GMT+0800 (中国标准时间)'
 
 
-orderTicket(checkTickets())
+def loopGrabTickets():
+    try:
+        tickets = checkTickets()
+        while len(tickets) == 0:
+            tickets = checkTickets()
+            print("没有票了")
+            time.sleep(5)
+        print("查票成功")
+        print(tickets)
+    except Exception as e:
+        print(e.__context__)
+
+
+if __name__ == "__main__":
+    t = threading.Thread(target=loopGrabTickets)
+    t.start()
 # station_names.split('|')
